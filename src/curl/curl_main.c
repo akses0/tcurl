@@ -617,6 +617,12 @@ execute_request (CurlSession_T session, TcurlOptions *opts)
   if (method == HTTP_METHOD_DELETE)
     return Curl_delete (session, opts->url);
 
+  if (method == HTTP_METHOD_POST)
+    return Curl_post (session, opts->url, NULL, NULL, 0);
+
+  if (method == HTTP_METHOD_PUT)
+    return Curl_put (session, opts->url, NULL, NULL, 0);
+
   return Curl_get (session, opts->url);
 }
 
