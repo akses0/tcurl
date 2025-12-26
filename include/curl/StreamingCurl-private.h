@@ -198,6 +198,7 @@ struct CurlSession
   /* Authentication state */
   CurlAuth auth;
   char *auth_header;               /**< Pre-computed auth header */
+  int auth_inhibited;              /**< Auth stripped due to cross-origin redirect */
 
   /* Transfer state */
   int64_t upload_total;            /**< Total bytes to upload */
