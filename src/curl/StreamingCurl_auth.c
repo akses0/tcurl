@@ -456,6 +456,7 @@ cleanup:
  * @brief Set up authentication header for session.
  *
  * Pre-computes the authentication header based on session auth settings.
+ * Skips generation if auth was inhibited due to cross-origin redirect.
  *
  * @param session Session
  * @return 0 on success, -1 on error
@@ -465,6 +466,15 @@ curl_auth_setup (CurlSession_T session)
 {
   if (!session)
     return -1;
+
+  /* Skip auth setup if inhibited by cross-origin redirect.
+   * This prevents credential leakage while preserving stored credentials
+   * for future requests to the original domain. */
+  if (session->auth_inhibited)
+    {
+      session->auth_header = NULL;
+      return 0;
+    }
 
   /* Clear existing auth header */
   session->auth_header = NULL;

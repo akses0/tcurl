@@ -96,7 +96,8 @@ typedef enum
   CURL_ERROR_WRITE_CALLBACK,       /**< Write callback returned error */
   CURL_ERROR_READ_CALLBACK,        /**< Read callback returned error */
   CURL_ERROR_OUT_OF_MEMORY,        /**< Memory allocation failed */
-  CURL_ERROR_ABORTED               /**< Operation aborted by callback */
+  CURL_ERROR_ABORTED,              /**< Operation aborted by callback */
+  CURL_ERROR_INSECURE_REDIRECT     /**< HTTPS to HTTP redirect blocked */
 } CurlError;
 
 /**

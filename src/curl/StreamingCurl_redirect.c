@@ -31,6 +31,90 @@
 #define HTTPS_PROTOCOL_PREFIX_LEN 8 /* "https://" */
 
 /**
+ * @brief Check if a header name is security-sensitive.
+ *
+ * These headers should be stripped on cross-origin redirects to prevent
+ * credential leakage to third-party domains.
+ *
+ * @param name Header name
+ * @return 1 if sensitive, 0 otherwise
+ */
+static int
+is_sensitive_header (const char *name)
+{
+  if (!name)
+    return 0;
+
+  /* Authorization headers */
+  if (strcasecmp (name, "Authorization") == 0)
+    return 1;
+  if (strcasecmp (name, "Proxy-Authorization") == 0)
+    return 1;
+
+  /* Cookie headers */
+  if (strcasecmp (name, "Cookie") == 0)
+    return 1;
+
+  /* Common API key headers */
+  if (strcasecmp (name, "X-API-Key") == 0)
+    return 1;
+  if (strcasecmp (name, "X-Auth-Token") == 0)
+    return 1;
+  if (strcasecmp (name, "X-Access-Token") == 0)
+    return 1;
+  if (strcasecmp (name, "X-Secret-Key") == 0)
+    return 1;
+
+  /* AWS headers */
+  if (strncasecmp (name, "X-Amz-", 6) == 0)
+    return 1;
+
+  /* Azure headers */
+  if (strcasecmp (name, "X-Ms-Authorization-Auxiliary") == 0)
+    return 1;
+
+  return 0;
+}
+
+/**
+ * @brief Filter sensitive headers from custom headers list.
+ *
+ * Removes headers that could leak credentials to third-party domains.
+ * Modifies the list in-place.
+ *
+ * @param headers Pointer to head of custom headers list
+ */
+static void
+filter_sensitive_custom_headers (CurlCustomHeader **headers)
+{
+  if (!headers || !*headers)
+    return;
+
+  CurlCustomHeader *prev = NULL;
+  CurlCustomHeader *current = *headers;
+
+  while (current)
+    {
+      if (is_sensitive_header (current->name))
+        {
+          /* Remove this header from the list */
+          if (prev)
+            prev->next = current->next;
+          else
+            *headers = current->next;
+
+          /* Move to next without updating prev */
+          current = current->next;
+        }
+      else
+        {
+          prev = current;
+          current = current->next;
+        }
+    }
+}
+
+/**
  * @brief Check if status code is a redirect.
  *
  * @param status HTTP status code
@@ -266,8 +350,31 @@ curl_prepare_redirect (CurlSession_T session)
   if (curl_parse_redirect_url (session, location, &new_url) != 0)
     return CURL_ERROR_INVALID_URL;
 
+  /* Security check: Block HTTPS to HTTP redirects (TLS downgrade) */
+  if (session->current_url.is_secure && !new_url.is_secure)
+    {
+      session->state = CURL_STATE_ERROR;
+      session->last_error = CURL_ERROR_INSECURE_REDIRECT;
+      return CURL_ERROR_INSECURE_REDIRECT;
+    }
+
   /* Check if this is cross-origin */
   int cross_origin = !curl_urls_same_origin (&session->current_url, &new_url);
+
+  /* Security: Strip sensitive data on cross-origin redirects */
+  if (cross_origin)
+    {
+      /* Inhibit authentication for this redirect chain (issue #6)
+       * We set a flag rather than clearing session->auth so that:
+       * 1. Credentials are preserved for future requests to original domain
+       * 2. curl_auth_setup() knows to skip regeneration during redirects
+       * The flag is reset in Curl_session_reset() for new requests */
+      session->auth_header = NULL;
+      session->auth_inhibited = 1;
+
+      /* Filter sensitive custom headers (issue #7) */
+      filter_sensitive_custom_headers (&session->custom_headers);
+    }
 
   /* Determine new method */
   SocketHTTP_Method new_method = curl_redirect_method (session);

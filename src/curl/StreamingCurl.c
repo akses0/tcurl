@@ -149,6 +149,11 @@ Curl_session_reset (CurlSession_T session)
   /* Keep connection for reuse (if compatible with next request) */
   /* Keep cookie jar */
   /* Keep custom headers */
+  /* Keep auth credentials (session->auth) */
+
+  /* Reset auth inhibit flag - allows auth on new requests after
+   * it was disabled due to cross-origin redirect in previous request */
+  session->auth_inhibited = 0;
 
   /* Reset transfer state */
   session->upload_total = 0;

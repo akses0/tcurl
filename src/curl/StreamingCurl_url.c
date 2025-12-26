@@ -56,12 +56,13 @@ static const char *error_strings[]
         [CURL_ERROR_WRITE_CALLBACK] = "Write callback failed",
         [CURL_ERROR_READ_CALLBACK] = "Read callback failed",
         [CURL_ERROR_OUT_OF_MEMORY] = "Out of memory",
-        [CURL_ERROR_ABORTED] = "Operation aborted" };
+        [CURL_ERROR_ABORTED] = "Operation aborted",
+        [CURL_ERROR_INSECURE_REDIRECT] = "Refused HTTPS to HTTP redirect" };
 
 const char *
 Curl_error_string (CurlError error)
 {
-  if (error >= 0 && error <= CURL_ERROR_ABORTED)
+  if (error >= 0 && error <= CURL_ERROR_INSECURE_REDIRECT)
     return error_strings[error];
   return "Unknown error";
 }
