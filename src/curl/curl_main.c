@@ -614,10 +614,75 @@ execute_with_data (CurlSession_T session, TcurlOptions *opts,
                        opts->data_len);
 }
 
+/* Maximum form body size to buffer in memory (1MB) */
+#define FORM_BODY_MAX_BUFFER_SIZE (1024 * 1024)
+
+static CurlError
+execute_with_form_data (CurlSession_T session, TcurlOptions *opts,
+                        SocketHTTP_Method method)
+{
+  /* Generate boundary */
+  char boundary[MIME_BOUNDARY_MAX_LEN];
+  Tcurl_mime_generate_boundary (boundary, sizeof (boundary));
+
+  /* Build Content-Type header */
+  char content_type[MIME_CONTENT_TYPE_BUFFER_SIZE];
+  snprintf (content_type, sizeof (content_type),
+            "multipart/form-data; boundary=%s", boundary);
+
+  /* Calculate body size */
+  ssize_t body_size = Tcurl_mime_body_size (opts->form_fields,
+                                             opts->form_field_count, boundary);
+
+  if (body_size < 0)
+    {
+      fprintf (stderr, "tcurl: Cannot determine form body size "
+               "(file not found or not readable)\n");
+      return CURL_ERROR_READ_CALLBACK;
+    }
+
+  if (body_size > FORM_BODY_MAX_BUFFER_SIZE)
+    {
+      fprintf (stderr, "tcurl: Form body too large (%zd bytes)\n", body_size);
+      return CURL_ERROR_OUT_OF_MEMORY;
+    }
+
+  /* Allocate buffer and build body */
+  char *body = malloc ((size_t)body_size + 1);
+  if (!body)
+    {
+      fprintf (stderr, "tcurl: Out of memory for form body\n");
+      return CURL_ERROR_OUT_OF_MEMORY;
+    }
+
+  ssize_t written = Tcurl_mime_build_body (opts->form_fields,
+                                            opts->form_field_count, boundary,
+                                            body, (size_t)body_size + 1);
+  if (written < 0)
+    {
+      free (body);
+      return CURL_ERROR_READ_CALLBACK;
+    }
+
+  /* Execute request */
+  CurlError result;
+  if (method == HTTP_METHOD_PUT)
+    result = Curl_put (session, opts->url, content_type, body, (size_t)written);
+  else
+    result = Curl_post (session, opts->url, content_type, body, (size_t)written);
+
+  free (body);
+  return result;
+}
+
 static CurlError
 execute_request (CurlSession_T session, TcurlOptions *opts)
 {
   SocketHTTP_Method method = Tcurl_get_http_method (opts);
+
+  /* Handle multipart form data (-F option) */
+  if (opts->form_fields && opts->form_field_count > 0)
+    return execute_with_form_data (session, opts, method);
 
   if (opts->data && opts->data_len > 0)
     return execute_with_data (session, opts, method);

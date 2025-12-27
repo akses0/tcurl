@@ -27,6 +27,28 @@ typedef enum
 } TcurlHttpVersion;
 
 /**
+ * @brief Form field type for -F option.
+ */
+typedef enum
+{
+  FORM_FIELD_VALUE = 0, /**< Regular name=value */
+  FORM_FIELD_FILE,      /**< File upload: name=@path */
+  FORM_FIELD_CONTENT    /**< File content as value: name=<path */
+} TcurlFormFieldType;
+
+/**
+ * @brief Single form field from -F option.
+ */
+typedef struct
+{
+  char *name;               /**< Field name */
+  char *value;              /**< Value or file path */
+  char *filename;           /**< Override filename (for @uploads) */
+  char *content_type;       /**< Override content-type */
+  TcurlFormFieldType type;  /**< Field type */
+} TcurlFormField;
+
+/**
  * @brief Parsed command-line options.
  */
 typedef struct
@@ -39,7 +61,8 @@ typedef struct
   const char *data;          /**< POST/PUT data */
   size_t data_len;           /**< Length of data */
   int data_allocated;        /**< Whether data was dynamically allocated */
-  const char *form_data;     /**< Multipart form data */
+  TcurlFormField *form_fields; /**< Array of form fields */
+  int form_field_count;        /**< Number of form fields */
 
   /* Headers */
   char **headers;            /**< Array of custom headers */
