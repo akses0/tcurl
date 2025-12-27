@@ -374,6 +374,8 @@ set(LIB_SOURCES
     src/curl/StreamingCurl.c
     # Phase 7: CLI argument parsing (library component)
     src/curl/curl_args.c
+    # Phase 8: Multipart form-data encoding (-F support)
+    src/curl/StreamingCurl_mime.c
 )
 
 # Add TLS sources if enabled (split for maintainability)

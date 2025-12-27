@@ -15,6 +15,7 @@
 #define STREAMINGCURL_PRIVATE_INCLUDED
 
 #include "curl/StreamingCurl.h"
+#include "curl/curl_args.h"
 #include "socket/Socket.h"
 #include "socket/SocketBuf.h"
 
@@ -1104,5 +1105,100 @@ extern int curl_session_init_cookies (CurlSession_T session,
  * @return 0 on success, -1 on error
  */
 extern int curl_session_save_cookies (CurlSession_T session);
+
+/* ============================================================================
+ * MIME/Multipart Form-Data Encoding (StreamingCurl_mime.c)
+ * ============================================================================ */
+
+/** Maximum boundary string length including null terminator */
+#define MIME_BOUNDARY_MAX_LEN 64
+
+/** Content-Type header buffer size for multipart/form-data */
+#define MIME_CONTENT_TYPE_BUFFER_SIZE 128
+
+/**
+ * @brief Multipart body streaming context.
+ */
+typedef struct MimeContext MimeContext;
+
+/**
+ * @brief Generate a random boundary string.
+ *
+ * @param boundary Output buffer
+ * @param size Buffer size
+ */
+extern void Tcurl_mime_generate_boundary (char *boundary, size_t size);
+
+/**
+ * @brief Guess MIME type from filename extension.
+ *
+ * @param filename Filename to check
+ * @return MIME type string
+ */
+extern const char *Tcurl_mime_guess_type (const char *filename);
+
+/**
+ * @brief Calculate total multipart body size.
+ *
+ * @param fields Form field array
+ * @param count Number of fields
+ * @param boundary Boundary string
+ * @return Body size in bytes, or -1 if cannot be determined
+ */
+extern ssize_t Tcurl_mime_body_size (const TcurlFormField *fields, int count,
+                                      const char *boundary);
+
+/**
+ * @brief Build complete multipart body into buffer.
+ *
+ * @param fields Form field array
+ * @param count Number of fields
+ * @param boundary Boundary string
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Bytes written, or -1 on error
+ */
+extern ssize_t Tcurl_mime_build_body (const TcurlFormField *fields, int count,
+                                       const char *boundary, char *output,
+                                       size_t output_size);
+
+/**
+ * @brief Create streaming MIME context.
+ *
+ * @param fields Form field array
+ * @param count Number of fields
+ * @return New context, or NULL on error
+ */
+extern MimeContext *Tcurl_mime_context_new (const TcurlFormField *fields,
+                                             int count);
+
+/**
+ * @brief Get boundary from context.
+ *
+ * @param ctx MIME context
+ * @return Boundary string
+ */
+extern const char *Tcurl_mime_context_boundary (const MimeContext *ctx);
+
+/**
+ * @brief Free streaming MIME context.
+ *
+ * @param ctx Context to free
+ */
+extern void Tcurl_mime_context_free (MimeContext *ctx);
+
+/**
+ * @brief Read callback for streaming multipart body.
+ *
+ * Compatible with CurlReadCallback signature.
+ *
+ * @param buffer Output buffer
+ * @param size Element size
+ * @param nmemb Number of elements
+ * @param userdata MimeContext pointer
+ * @return Number of bytes copied, 0 on EOF, or (size_t)-1 on error
+ */
+extern size_t Tcurl_mime_read_callback (void *buffer, size_t size, size_t nmemb,
+                                         void *userdata);
 
 #endif /* STREAMINGCURL_PRIVATE_INCLUDED */

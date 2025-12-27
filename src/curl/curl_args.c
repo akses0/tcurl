@@ -272,12 +272,180 @@ handle_data_option (TcurlOptions *opts, const char *optarg)
   return 0;
 }
 
+/* Form parameter keywords */
+#define FORM_PARAM_TYPE "type="
+#define FORM_PARAM_TYPE_LEN (sizeof (FORM_PARAM_TYPE) - 1)
+#define FORM_PARAM_FILENAME "filename="
+#define FORM_PARAM_FILENAME_LEN (sizeof (FORM_PARAM_FILENAME) - 1)
+
+/*
+ * Parse form field parameters (;type=xxx;filename=xxx)
+ *
+ * Returns 0 on success, -1 on allocation failure.
+ */
+static int
+parse_form_params (const char *params, TcurlFormField *field)
+{
+  const char *p = params;
+  while (p && *p == ';')
+    {
+      p++; /* Skip ';' */
+      if (strncasecmp (p, FORM_PARAM_TYPE, FORM_PARAM_TYPE_LEN) == 0)
+        {
+          p += FORM_PARAM_TYPE_LEN;
+          const char *end = strchr (p, ';');
+          size_t len = end ? (size_t)(end - p) : strlen (p);
+          field->content_type = strndup (p, len);
+          if (!field->content_type)
+            return -1;
+          p = end;
+        }
+      else if (strncasecmp (p, FORM_PARAM_FILENAME, FORM_PARAM_FILENAME_LEN) == 0)
+        {
+          p += FORM_PARAM_FILENAME_LEN;
+          const char *end = strchr (p, ';');
+          size_t len = end ? (size_t)(end - p) : strlen (p);
+          field->filename = strndup (p, len);
+          if (!field->filename)
+            {
+              /* Clean up previously allocated content_type */
+              free (field->content_type);
+              field->content_type = NULL;
+              return -1;
+            }
+          p = end;
+        }
+      else
+        {
+          /* Skip unknown parameter */
+          const char *end = strchr (p, ';');
+          p = end;
+        }
+    }
+  return 0;
+}
+
+/*
+ * Parse a single -F form field argument.
+ * Supports:
+ *   name=value           - Regular form field
+ *   name=@path           - File upload
+ *   name=<path           - File content as value
+ *   name=@path;type=...  - With content-type override
+ *   name=@path;filename= - With filename override
+ */
+static int
+parse_form_field (const char *optarg, TcurlFormField *field)
+{
+  memset (field, 0, sizeof (*field));
+
+  /* Find '=' separator */
+  const char *eq = strchr (optarg, '=');
+  if (!eq || eq == optarg)
+    {
+      fprintf (stderr, "tcurl: Invalid form field (missing '='): %s\n",
+               optarg);
+      return -1;
+    }
+
+  /* Extract field name */
+  size_t name_len = eq - optarg;
+  field->name = strndup (optarg, name_len);
+  if (!field->name)
+    return -1;
+
+  const char *value_start = eq + 1;
+
+  /* Determine field type based on prefix */
+  if (*value_start == '@')
+    {
+      field->type = FORM_FIELD_FILE;
+      value_start++;
+    }
+  else if (*value_start == '<')
+    {
+      field->type = FORM_FIELD_CONTENT;
+      value_start++;
+    }
+  else
+    {
+      field->type = FORM_FIELD_VALUE;
+    }
+
+  /* Parse value and optional parameters */
+  const char *semi = strchr (value_start, ';');
+  if (semi)
+    {
+      field->value = strndup (value_start, semi - value_start);
+      if (!field->value)
+        {
+          free (field->name);
+          field->name = NULL;
+          return -1;
+        }
+
+      if (parse_form_params (semi, field) < 0)
+        {
+          free (field->name);
+          free (field->value);
+          field->name = NULL;
+          field->value = NULL;
+          return -1;
+        }
+    }
+  else
+    {
+      field->value = strdup (value_start);
+      if (!field->value)
+        {
+          free (field->name);
+          field->name = NULL;
+          return -1;
+        }
+    }
+
+  return 0;
+}
+
+/*
+ * Free a single form field's memory.
+ */
+static void
+free_form_field (TcurlFormField *field)
+{
+  if (!field)
+    return;
+  free (field->name);
+  free (field->value);
+  free (field->filename);
+  free (field->content_type);
+  memset (field, 0, sizeof (*field));
+}
+
 static int
 handle_form_option (TcurlOptions *opts, const char *optarg)
 {
-  opts->form_data = optarg;
+  /* Grow form fields array */
+  TcurlFormField *new_fields
+      = realloc (opts->form_fields,
+                 (opts->form_field_count + 1) * sizeof (TcurlFormField));
+  if (!new_fields)
+    {
+      fprintf (stderr, "tcurl: Out of memory for form field\n");
+      return -1;
+    }
+
+  opts->form_fields = new_fields;
+  TcurlFormField *field = &opts->form_fields[opts->form_field_count];
+
+  if (parse_form_field (optarg, field) < 0)
+    return -1;
+
+  opts->form_field_count++;
+
   if (!opts->method)
     opts->method = "POST";
+
   return 0;
 }
 
@@ -383,6 +551,11 @@ Tcurl_options_free (TcurlOptions *opts)
 
   if (opts->data_allocated)
     free ((void *)opts->data);
+
+  /* Free form fields */
+  for (int i = 0; i < opts->form_field_count; i++)
+    free_form_field (&opts->form_fields[i]);
+  free (opts->form_fields);
 
   memset (opts, 0, sizeof (*opts));
 }
